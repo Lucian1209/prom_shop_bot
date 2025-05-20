@@ -5,6 +5,7 @@ const axios = require('axios');
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 const orders = {};
+const adminOrders = [];
 
 bot.onText(/\/start/, (msg) => {
   bot.sendMessage(msg.chat.id, 'Привіт! Обери дію:', {
@@ -127,3 +128,6 @@ async function getProductInfo(id) {
     return null;
   }
 }
+
+// Підключення адмінки
+require('./admin')(bot, orders, adminOrders);
