@@ -24,7 +24,7 @@ bot.on('callback_query', async (query) => {
 
   if (data === 'catalog') return await sendCatalog(chatId);
   if (data === 'support') {
-    return bot.sendMessage(chatId, 'Підтримка: @your_support_username\nEmail: support@example.com');
+    return bot.sendMessage(chatId, 'Підтримка: @josnik_lamer');
   }
 
   if (data.startsWith('buy_')) {
@@ -165,7 +165,7 @@ bot.on('message', (msg) => {
       lastMenuMessage[chatId] = sent.message_id;
     });
   } else if (text === '☎️ Підтримка') {
-    bot.sendMessage(chatId, 'Звʼяжіться з нами: @your_support', mainMenu).then(sent => {
+    bot.sendMessage(chatId, 'Звʼяжіться з нами: @josnik_lamer', mainMenu).then(sent => {
       lastMenuMessage[chatId] = sent.message_id;
     });
   }
