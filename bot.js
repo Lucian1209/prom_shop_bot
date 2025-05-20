@@ -129,5 +129,48 @@ async function getProductInfo(id) {
   }
 }
 
+
+const mainMenu = {
+  reply_markup: {
+    keyboard: [['🛍 Каталог', '📦 Мої замовлення'], ['☎️ Підтримка']],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  }
+};
+
+const lastMenuMessage = {};
+
+bot.onText(/\/start/, (msg) => {
+  bot.sendMessage(msg.chat.id, 'Вітаю! Оберіть пункт меню:', mainMenu).then(sent => {
+    lastMenuMessage[msg.chat.id] = sent.message_id;
+  });
+});
+
+bot.on('message', (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  if (text.startsWith('/')) return; // не реагуємо на команди тут
+
+  if (lastMenuMessage[chatId]) {
+    bot.deleteMessage(chatId, lastMenuMessage[chatId]).catch(() => {});
+  }
+
+  if (text === '🛍 Каталог') {
+    bot.sendMessage(chatId, 'Ось наш каталог товарів...', mainMenu).then(sent => {
+      lastMenuMessage[chatId] = sent.message_id;
+    });
+  } else if (text === '📦 Мої замовлення') {
+    bot.sendMessage(chatId, 'Ось ваші замовлення...', mainMenu).then(sent => {
+      lastMenuMessage[chatId] = sent.message_id;
+    });
+  } else if (text === '☎️ Підтримка') {
+    bot.sendMessage(chatId, 'Звʼяжіться з нами: @your_support', mainMenu).then(sent => {
+      lastMenuMessage[chatId] = sent.message_id;
+    });
+  }
+});
+
+
 // Підключення адмінки
 require('./admin')(bot, orders, adminOrders);
