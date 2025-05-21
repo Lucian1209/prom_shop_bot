@@ -13,6 +13,11 @@ module.exports = function (bot, orders, adminOrders) {
   // Головне меню адміністратора
   bot.onText(/\/admin/, (msg) => {
     const chatId = msg.chat.id;
+
+    if (chatId.toString() !== process.env.ADMIN_CHAT_ID) {
+       console.log('Доступ заборонено для:', chatId);
+    return;
+    }
     
     if (chatId.toString() !== process.env.ADMIN_CHAT_ID) return;
     
