@@ -101,6 +101,52 @@ bot.onText(/\/start/, (msg) => {
   });
 });
 
+// Обробник текстових повідомлень для кнопок звичайної клавіатури
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+
+  switch (text) {
+    case '🛍️ Переглянути каталог':
+      // Виклик попередньої логіки каталогу
+      bot.emit('callback_query', { message: msg, data: 'catalog' });
+      break;
+    case '📞 Зв\'язатися з підтримкою':
+      // Виклик попередньої логіки підтримки
+      bot.emit('callback_query', { message: msg, data: 'support' });
+      break;
+    case '/admin':
+      const chatId = msg.chat.id;
+
+      if (chatId.toString() !== process.env.ADMIN_CHAT_ID) {
+        console.log('Доступ заборонено для:', chatId);
+        return;
+       }
+    
+      if (chatId.toString() !== process.env.ADMIN_CHAT_ID) return;
+    
+       // Очищаємо попередній стан
+      clearState(chatId);
+
+      bot.sendMessage(chatId, '🔐 *Панель адміністратора*', {
+        parse_mode: 'Markdown',
+        reply_markup: {
+         inline_keyboard: [
+           [{ text: '📊 Статистика', callback_data: 'admin_stats' }],
+          [{ text: '🧾 Замовлення', callback_data: 'admin_orders' }],
+          [{ text: '🛍️ Управління товарами', callback_data: 'admin_products' }],
+          [{ text: '📢 Розсилка', callback_data: 'admin_broadcast' }]
+        ]
+      }
+    });
+      bot.emit('text', msg);
+      break;
+    default:
+      // Обробка інших повідомлень
+      break;
+  }
+});
+
 // Обробка кнопок
 bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
