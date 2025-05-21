@@ -5,8 +5,8 @@ const axios = require('axios');
 // Створення бота з токеном з .env
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-const adminModule = require('./admin'); // Підключення адмін-панелі
- // Ініціалізація
+// Підключення адмін-панелі
+const adminModule = require('./admin');
 
 // Зберігання замовлень для адміністратора
 const adminOrders = [];
@@ -79,11 +79,20 @@ async function createOrder(orderData) {
 // Старт бота
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
+
+  const keyboard = [
+     ['🛍️ Переглянути каталог', '📞 Зв\'язатися з підтримкою']
+  ];
+  // Якщо користувач адміністратор, додаємо кнопку /admin
+  if (chatId === process.env.ADMIN_CHAT_ID) {
+    keyboard.push(['/admin']);
+  }
   
   bot.sendMessage(chatId, 
     '👋 *Вітаємо у нашому магазині!*\n\nОберіть товар із каталогу, і ми швидко доставимо його вам.', {
     parse_mode: 'Markdown',
     reply_markup: {
+      keyboard,
       inline_keyboard: [
         [{ text: '🛍️ Переглянути каталог', callback_data: 'catalog' }],
         [{ text: '📞 Зв\'язатися з підтримкою', callback_data: 'support' }]
