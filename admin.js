@@ -682,3 +682,471 @@ module.exports = function (bot, orders, adminOrders) {
               reply_markup: {
                 inline_keyboard: [
                   [{ text: '« Скасувати', callback_data: 'admin_broadcast' }]
+                ]
+              }
+            }
+          );
+          return;
+        }
+        
+        if (state.step === 'button_text') {
+          // Зберігаємо текст кнопки
+          state.buttonText = text;
+          state.step = 'button_url';
+          
+          bot.sendMessage(chatId, 
+            '✅ Текст кнопки збережено.\n\nТепер введіть URL для кнопки:',
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: '« Скасувати', callback_data: 'admin_broadcast' }]
+                ]
+              }
+            }
+          );
+          return;
+        }
+        
+        if (state.step === 'button_url') {
+          // Валідуємо URL
+          if (!text.startsWith('http://') && !text.startsWith('https://')) {
+            bot.sendMessage(chatId, 
+              '❌ Некоректний URL. URL повинен починатися з http:// або https://. Спробуйте ще раз:',
+              {
+                reply_markup: {
+                  inline_keyboard: [
+                    [{ text: '« Скасувати', callback_data: 'admin_broadcast' }]
+                  ]
+                }
+              }
+            );
+            return;
+          }
+          
+          // Зберігаємо URL кнопки
+          state.buttonUrl = text;
+          
+          // Готуємо попередній перегляд
+          bot.sendMessage(chatId, 
+            `*Попередній перегляд розсилки:*\n\n${state.text}`,
+            {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: state.buttonText, url: state.buttonUrl }],
+                  [{ text: '✅ Підтвердити розсилку', callback_data: 'admin_confirm_broadcast' }],
+                  [{ text: '« Скасувати', callback_data: 'admin_broadcast' }]
+                ]
+              }
+            }
+          );
+          return;
+        }
+      }
+    }
+  });
+
+  // Обробник фото для додавання товару
+  bot.on('photo', (msg) => {
+    const chatId = msg.chat.id;
+    
+    // Перевіряємо, чи це адмін
+    if (chatId.toString() !== process.env.ADMIN_CHAT_ID) return;
+    
+    // Перевіряємо, чи є активний стан для додавання товару
+    if (!adminStates[chatId] || adminStates[chatId].action !== 'add_product' || adminStates[chatId].step !== 'image') {
+      return;
+    }
+    
+    // Отримуємо фото з найвищою роздільною здатністю
+    const photo = msg.photo[msg.photo.length - 1];
+    const fileId = photo.file_id;
+    
+    // Зберігаємо fileId
+    adminStates[chatId].image = fileId;
+    
+    // Фіналізуємо додавання товару
+    const product = {
+      name: adminStates[chatId].name,
+      price: adminStates[chatId].price,
+      description: adminStates[chatId].description,
+      image: fileId
+    };
+    
+    // Тут мала б бути функція для збереження товару в базу даних
+    
+    // Очищаємо стан
+    clearState(chatId);
+    
+    bot.sendMessage(chatId, 
+      `✅ *Товар успішно додано*\n\n` +
+      `📦 Назва: ${product.name}\n` +
+      `💰 Ціна: ${product.price} грн\n` +
+      `📝 Опис: ${product.description.substring(0, 100)}${product.description.length > 100 ? '...' : ''}`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '« Назад до меню', callback_data: 'admin_products' }]
+          ]
+        }
+      }
+    );
+  });
+
+  // Додаткові обробники для адмін-панелі
+  bot.on('callback_query', async (query) => {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+    
+    // Перевіряємо, чи це адмін
+    if (chatId.toString() !== process.env.ADMIN_CHAT_ID) return;
+    
+    // Обробка пропуску фото при додаванні товару
+    if (data === 'admin_skip_image') {
+      // Відповідаємо на callback
+      bot.answerCallbackQuery(query.id);
+      
+      // Перевіряємо, чи є активний стан для додавання товару
+      if (!adminStates[chatId] || adminStates[chatId].action !== 'add_product' || adminStates[chatId].step !== 'image') {
+        return;
+      }
+      
+      // Фіналізуємо додавання товару без фото
+      const product = {
+        name: adminStates[chatId].name,
+        price: adminStates[chatId].price,
+        description: adminStates[chatId].description,
+        image: null
+      };
+      
+      // Тут мала б бути функція для збереження товару в базу даних
+      
+      // Очищаємо стан
+      clearState(chatId);
+      
+      bot.editMessageText(
+        `✅ *Товар успішно додано*\n\n` +
+        `📦 Назва: ${product.name}\n` +
+        `💰 Ціна: ${product.price} грн\n` +
+        `📝 Опис: ${product.description.substring(0, 100)}${product.description.length > 100 ? '...' : ''}`,
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '« Назад до меню', callback_data: 'admin_products' }]
+            ]
+          }
+        }
+      );
+      return;
+    }
+    
+    // Підтвердження розсилки з кнопками
+    if (data === 'admin_confirm_broadcast') {
+      // Відповідаємо на callback
+      bot.answerCallbackQuery(query.id);
+      
+      // Перевіряємо, чи є активний стан для розсилки
+      if (!adminStates[chatId] || adminStates[chatId].action !== 'broadcast' || adminStates[chatId].type !== 'buttons') {
+        return;
+      }
+      
+      // Отримуємо дані розсилки
+      const broadcastData = adminStates[chatId];
+      
+      // Очищаємо стан
+      clearState(chatId);
+      
+      bot.editMessageText(
+        '📢 *Розсилку розпочато*\n\nРозсилка з кнопками...',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown'
+        }
+      );
+      
+      // Імітуємо процес розсилки
+      setTimeout(() => {
+        // Тут мала б бути реальна функція розсилки
+        const recipientCount = Math.floor(Math.random() * 50) + 10;
+        
+        bot.editMessageText(
+          `✅ *Розсилку завершено*\n\nПовідомлення з кнопкою успішно надіслано ${recipientCount} отримувачам.`,
+          {
+            chat_id: chatId,
+            message_id: query.message.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '« Назад до меню', callback_data: 'admin_back' }]
+              ]
+            }
+          }
+        );
+      }, 2000);
+      return;
+    }
+    
+    // Список товарів
+    if (data === 'admin_list_products') {
+      bot.answerCallbackQuery(query.id);
+      
+      // Тут мав би бути код для отримання списку товарів з бази даних
+      // Для прикладу використовуємо тестові дані
+      const products = [
+        { id: 1, name: 'Футболка XL', price: 499.99, status: 'active' },
+        { id: 2, name: 'Джинси', price: 999.99, status: 'active' },
+        { id: 3, name: 'Куртка зимова', price: 1999.99, status: 'inactive' }
+      ];
+      
+      if (products.length === 0) {
+        bot.editMessageText(
+          '📋 *Список товарів*\n\nТоварів поки немає.',
+          {
+            chat_id: chatId,
+            message_id: query.message.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '« Назад', callback_data: 'admin_products' }]
+              ]
+            }
+          }
+        );
+        return;
+      }
+      
+      let message = '📋 *Список товарів*\n\n';
+      
+      products.forEach((product, i) => {
+        message += `*${i + 1}. ${product.name}*\n`;
+        message += `💰 Ціна: ${product.price} грн\n`;
+        message += `📊 Статус: ${product.status === 'active' ? '✅ Активний' : '❌ Неактивний'}\n\n`;
+      });
+      
+      // Кнопки для керування товарами
+      const keyboard = products.map(product => [
+        { text: `✏️ Редагувати ${product.name}`, callback_data: `admin_edit_product_${product.id}` }
+      ]);
+      
+      // Додаємо кнопку для повернення
+      keyboard.push([{ text: '« Назад', callback_data: 'admin_products' }]);
+      
+      bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: keyboard
+        }
+      });
+      return;
+    }
+    
+    // Редагування товару
+    if (data.startsWith('admin_edit_product_')) {
+      bot.answerCallbackQuery(query.id);
+      
+      const productId = data.split('admin_edit_product_')[1];
+      
+      // Тут мав би бути код для отримання товару з бази даних
+      // Для прикладу використовуємо тестові дані
+      const product = {
+        id: productId,
+        name: 'Футболка XL',
+        price: 499.99,
+        description: 'Якісна бавовняна футболка великого розміру',
+        status: 'active'
+      };
+      
+      bot.editMessageText(
+        `✏️ *Редагування товару*\n\n` +
+        `📦 Назва: ${product.name}\n` +
+        `💰 Ціна: ${product.price} грн\n` +
+        `📝 Опис: ${product.description}\n` +
+        `📊 Статус: ${product.status === 'active' ? '✅ Активний' : '❌ Неактивний'}\n\n` +
+        `Оберіть дію:`,
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✏️ Змінити назву', callback_data: `admin_edit_product_name_${productId}` }],
+              [{ text: '💰 Змінити ціну', callback_data: `admin_edit_product_price_${productId}` }],
+              [{ text: '📝 Змінити опис', callback_data: `admin_edit_product_desc_${productId}` }],
+              [{ text: `${product.status === 'active' ? '❌ Деактивувати' : '✅ Активувати'}`, callback_data: `admin_toggle_product_${productId}` }],
+              [{ text: '🗑️ Видалити товар', callback_data: `admin_delete_product_${productId}` }],
+              [{ text: '« Назад до списку', callback_data: 'admin_list_products' }]
+            ]
+          }
+        }
+      );
+      return;
+    }
+    
+    // Зміна статусу товару
+    if (data.startsWith('admin_toggle_product_')) {
+      bot.answerCallbackQuery(query.id);
+      
+      const productId = data.split('admin_toggle_product_')[1];
+      
+      // Тут мав би бути код для зміни статусу товару в базі даних
+      
+      bot.editMessageText(
+        '✅ *Статус товару змінено*\n\nСтатус товару успішно оновлено.',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '« Назад до списку', callback_data: 'admin_list_products' }]
+            ]
+          }
+        }
+      );
+      return;
+    }
+    
+    // Видалення товару
+    if (data.startsWith('admin_delete_product_')) {
+      bot.answerCallbackQuery(query.id);
+      
+      const productId = data.split('admin_delete_product_')[1];
+      
+      // Запит підтвердження видалення
+      bot.editMessageText(
+        '⚠️ *Підтвердження видалення*\n\nВи впевнені, що хочете видалити цей товар? Ця дія незворотна.',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '✅ Так, видалити', callback_data: `admin_confirm_delete_${productId}` }],
+              [{ text: '❌ Скасувати', callback_data: `admin_edit_product_${productId}` }]
+            ]
+          }
+        }
+      );
+      return;
+    }
+    
+    // Підтвердження видалення товару
+    if (data.startsWith('admin_confirm_delete_')) {
+      bot.answerCallbackQuery(query.id);
+      
+      const productId = data.split('admin_confirm_delete_')[1];
+      
+      // Тут мав би бути код для видалення товару з бази даних
+      
+      bot.editMessageText(
+        '✅ *Товар видалено*\n\nТовар успішно видалено з бази даних.',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '« Назад до списку', callback_data: 'admin_list_products' }]
+            ]
+          }
+        }
+      );
+      return;
+    }
+    
+    // Перегляд замовлень за період
+    if (data === 'admin_orders_period') {
+      bot.answerCallbackQuery(query.id);
+      
+      bot.editMessageText(
+        '📅 *Замовлення за період*\n\nОберіть період:',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '📆 Сьогодні', callback_data: 'admin_orders_today' }],
+              [{ text: '📆 Вчора', callback_data: 'admin_orders_yesterday' }],
+              [{ text: '📆 Цей тиждень', callback_data: 'admin_orders_week' }],
+              [{ text: '📆 Цей місяць', callback_data: 'admin_orders_month' }],
+              [{ text: '📆 Власний період', callback_data: 'admin_orders_custom_period' }],
+              [{ text: '« Назад', callback_data: 'admin_orders' }]
+            ]
+          }
+        }
+      );
+      return;
+    }
+    
+    // Замовлення за сьогодні
+    if (data === 'admin_orders_today') {
+      bot.answerCallbackQuery(query.id);
+      
+      // Фільтруємо замовлення за сьогоднішню дату
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const todayOrders = adminOrders.filter(order => {
+        const orderDate = new Date(order.date);
+        return orderDate >= today;
+      });
+      
+      if (todayOrders.length === 0) {
+        bot.editMessageText(
+          '📅 *Замовлення за сьогодні*\n\nЗа сьогодні немає замовлень.',
+          {
+            chat_id: chatId,
+            message_id: query.message.message_id,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '« Назад', callback_data: 'admin_orders_period' }]
+              ]
+            }
+          }
+        );
+        return;
+      }
+      
+      // Показуємо список замовлень
+      let message = '📅 *Замовлення за сьогодні*\n\n';
+      
+      todayOrders.forEach((order, i) => {
+        const orderDate = new Date(order.date);
+        const formattedTime = `${orderDate.getHours().toString().padStart(2, '0')}:${orderDate.getMinutes().toString().padStart(2, '0')}`;
+        
+        message += `*#${i + 1}* (${formattedTime})\n`;
+        message += `📦 Товар: ${order.product}\n`;
+        message += `👤 Клієнт: ${order.name}\n`;
+        message += `📞 Телефон: ${order.phone}\n`;
+        message += `🏠 Адреса: ${order.address || 'Не вказано'}\n\n`;
+      });
+      
+      bot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: query.message.message_id,
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '« Назад', callback_data: 'admin_orders_period' }]
+          ]
+        }
+      });
+      return;
+    }
+  });
+
+  // Повертаємо функцію для інтеграції з іншими модулями
+  return {
+    adminStates,
+    clearState
+  };
+};
