@@ -1,12 +1,9 @@
-⁸require('dotenv').config();
+require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 
 // Створення бота з токеном з .env
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
-
-const adminModule = require('./admin'); // Підключення адмін-панелі
- // Ініціалізація
 
 // Зберігання замовлень для адміністратора
 const adminOrders = [];
@@ -481,4 +478,3 @@ console.log('Бот запущено!');
 
 // Експортуємо об'єкти для адмінського модуля
 module.exports = { bot, adminOrders };
-adminModule(bot, [], adminOrders);
