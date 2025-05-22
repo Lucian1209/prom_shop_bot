@@ -5,8 +5,13 @@ const axios = require('axios');
 // Створення бота з токеном з .env
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-// Зберігання замовлень для адміністратора
 const adminOrders = [];
+
+const adminModule = require('./admin.js');
+adminModule(bot, [], adminOrders);
+
+// Зберігання замовлень для адміністратора
+
 
 // Функція для отримання каталогу товарів з Prom.ua
 async function getCatalogProducts(limit = 10) {
