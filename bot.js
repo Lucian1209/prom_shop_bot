@@ -421,6 +421,98 @@ async function showCatalog(chatId, page = 1) {
             caption,
             parse_mode: 'Markdown',
             reply_markup: keyboard
+// Функція відображення сторінки каталогу
+async function showCatalog(chatId, page = 1) {
+  const itemsPerPage = 5;
+  const offset = (page - 1) * itemsPerPage;
+  
+  // Показати повідомлення про завантаження
+  const loadingMsg = await bot.sendMessage(chatId, '⏳ *Завантажую каталог товарів...*', {
+    parse_mode: 'Markdown'
+  });
+  
+  try {
+    // Отримуємо продукти з API Prom.ua
+    const products = await getCatalogProducts(50); // Отримаємо більше для пагінації
+    
+    if (!products || products.length === 0) {
+      await bot.editMessageText('😔 На жаль, товари не знайдено. Спробуйте пізніше.', {
+        chat_id: chatId,
+        message_id: loadingMsg.message_id,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '« Назад', callback_data: 'start' }]
+          ]
+        }
+      });
+      return;
+    }
+    
+    // Розбиваємо на сторінки
+    const totalPages = Math.ceil(products.length / itemsPerPage);
+    const pageProducts = products.slice(offset, offset + itemsPerPage);
+    
+    // Видаляємо повідомлення про завантаження
+    await bot.deleteMessage(chatId, loadingMsg.message_id);
+    
+    // Відправляємо кожен товар окремим повідомленням
+    for (const product of pageProducts) {
+      const price = product.price ? `${product.price} грн` : 'Ціна за запитом';
+      
+      // Виправлено отримання зображення - перевіряємо різні можливі поля
+      let image = null;
+      if (product.main_image?.url_original) {
+        image = product.main_image.url_original;
+      } else if (product.main_image?.url) {
+        image = product.main_image.url;
+      } else if (product.images && product.images.length > 0) {
+        // Перевіряємо перше зображення в масиві
+        if (product.images[0].url_original) {
+          image = product.images[0].url_original;
+        } else if (product.images[0].url) {
+          image = product.images[0].url;
+        }
+      } else if (product.image) {
+        image = product.image;
+      }
+      
+      const availability = product.presence === 'available' ? '✅ В наявності' : '⌛ Під замовлення';
+      
+      // Очищення опису від HTML тегів
+      let cleanDescription = '';
+      if (product.description) {
+        cleanDescription = product.description
+          .replace(/<[^>]*>/g, '') // Видаляємо HTML теги
+          .replace(/&nbsp;/g, ' ') // Замінюємо &nbsp; на пробіли
+          .replace(/&amp;/g, '&') // Замінюємо HTML entities
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .trim();
+        
+        // Обрізаємо до 150 символів
+        if (cleanDescription.length > 150) {
+          cleanDescription = cleanDescription.substring(0, 150) + '...';
+        }
+      }
+      
+      const caption = `*${product.name}*\n\n💰 *${price}*\n${availability}\n\n${cleanDescription || 'Натисніть кнопку деталі для більше інформації'}`;
+      
+      const keyboard = {
+        inline_keyboard: [
+          [
+            { text: '🔍 Деталі', callback_data: `view_${product.id}` },
+            { text: '🛒 Купити', callback_data: `buy_${product.id}` }
+          ]
+        ]
+      };
+      
+      try {
+        if (image) {
+          await bot.sendPhoto(chatId, image, {
+            caption,
+            parse_mode: 'Markdown',
+            reply_markup: keyboard
           });
         } else {
           await bot.sendMessage(chatId, caption, {
@@ -430,7 +522,7 @@ async function showCatalog(chatId, page = 1) {
         }
       } catch (imageError) {
         // Якщо помилка з відправкою фото, відправляємо тільки текст
-        console.error('Помилка відправки фото:', imageError.message);
+        console.error('Помилка відправки фото для товару', product.id, ':', imageError.message);
         await bot.sendMessage(chatId, caption, {
           parse_mode: 'Markdown',
           reply_markup: keyboard
