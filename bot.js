@@ -94,9 +94,7 @@ bot.onText(/\/start/, (msg) => {
   
   bot.sendMessage(chatId, 
     '👋 *Вітаємо у нашому магазині!*\n\nОберіть товар із каталогу, і ми швидко доставимо його вам.', {
-    parse_mode: 'Markdown',
-      mainMenu
-    }    
+    parse_mode: 'Markdown'   
   }, mainMenu);
 });
 
