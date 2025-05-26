@@ -10,18 +10,32 @@ const adminModule = require('./admin'); // Підключення адмін-п�
 // Зберігання замовлень для адміністратора
 const adminOrders = [];
 
+// Зберігання стану користувачів
+const userStates = {};
+const userOrders = {};
+
 const lastMessages = {};
 const mainMenu = {
   reply_markup: {
     keyboard: [
       ['🛍 Каталог', '📦 Відстежити замовлення'],
-      ['☎️ Підтримка']
+      ['☎️ Підтримка', '📖 Допомога']
     ],
     resize_keyboard: true,
     one_time_keyboard: false
   }
 };
 
+const catalogMenu = {
+  reply_markup: {
+    keyboard: [
+      ['📄 Список товарів', '🔍 Пошук товару'],
+      ['🏠 Головне меню']
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  }
+};
 
 // Функція для отримання каталогу товарів з Prom.ua
 async function getCatalogProducts(limit = 10) {
@@ -91,380 +105,451 @@ async function createOrder(orderData) {
 // Старт бота
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
+  userStates[chatId] = 'main_menu';
   
   bot.sendMessage(chatId, 
-    '👋 *Вітаємо у нашому магазині!*\n\nОберіть товар із каталогу, і ми швидко доставимо його вам.', {
-    parse_mode: 'Markdown'   
-  }, mainMenu);
+    '👋 *Вітаємо у нашому магазині!*\n\nОберіть товар із каталогу, і ми швидко доставимо його вам.', 
+    Object.assign({ parse_mode: 'Markdown' }, mainMenu)
+  );
 });
 
-// Обробка кнопок
-bot.on('callback_query', async (query) => {
-  const chatId = query.message.chat.id;
-  const messageId = query.message.message_id;
-  const data = query.data;
+// Обробка текстових повідомлень
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+  const userId = msg.from.id;
   
-  // Відповідаємо на callback, щоб прибрати "годинник" на кнопці
-  bot.answerCallbackQuery(query.id);
-  
-  // Обробка каталогу
-  if (data === 'catalog') {
-    await showCatalog(chatId);
+  // Ігноруємо команди
+  if (text && text.startsWith('/')) {
     return;
   }
   
-  // Обробка підтримки
-  if (data === 'support') {
-    bot.sendMessage(chatId, 
-      '*📞 Наша підтримка:*\n\n• Телеграм: @josnik_lamer\n• Email: support@example.com\n• Телефон: +380669419224\n\nМи відповімо вам у найкоротший термін!', {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '« Назад', callback_data: 'start' }]
-        ]
-      }
-    });
-    return;
-  }
+  const currentState = userStates[chatId] || 'main_menu';
   
-  // Повернення на стартове меню
-  if (data === 'start') {
-    bot.editMessageText('👋 *Вітаємо у нашому магазині!*\n\nОберіть товар із каталогу, і ми швидко доставимо його вам.', {
-      chat_id: chatId,
-      message_id: messageId,
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🛍️ Переглянути каталог', callback_data: 'catalog' }],
-          [{ text: '📞 Зв\'язатися з підтримкою', callback_data: 'support' }]
-        ]
+  switch (text) {
+    case '🛍 Каталог':
+      userStates[chatId] = 'catalog';
+      bot.sendMessage(chatId, 
+        '📂 *Каталог товарів*\n\nОберіть дію:', 
+        Object.assign({ parse_mode: 'Markdown' }, catalogMenu)
+      );
+      break;
+      
+    case '📄 Список товарів':
+      if (currentState === 'catalog') {
+        await showProductsList(chatId);
       }
-    });
-    return;
-  }
-  
-  // Обробка покупки товару
-  if (data.startsWith('buy_')) {
-    const productId = data.split('_')[1];
-    const product = await getProductInfo(productId);
-    
-    if (!product) {
-      bot.sendMessage(chatId, '❌ На жаль, товар не знайдено або він недоступний. Спробуйте інший товар.');
-      return;
-    }
-    
-    // Зберігаємо стан замовлення в інлайн кнопці
-    bot.sendMessage(chatId, 
-      `🛒 *Оформлення замовлення*\n\nВи обрали: *${product.name}*\nЦіна: ${product.price} грн\n\nДля продовження, вкажіть ваше ім'я:`, {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        force_reply: true,
-        selective: true,
-        input_field_placeholder: 'Введіть ваше ім\'я'
-      }
-    }).then(sent => {
-      // Створюємо обробник для наступного повідомлення від користувача - імені
-      const replyListenerId = bot.onReplyToMessage(chatId, sent.message_id, async (nameMsg) => {
-        const name = nameMsg.text;
-        
-        // Просимо ввести телефон
+      break;
+      
+    case '🔍 Пошук товару':
+      if (currentState === 'catalog') {
+        userStates[chatId] = 'search_product';
         bot.sendMessage(chatId, 
-          `Дякуємо, *${name}*!\n\nТепер вкажіть ваш номер телефону:`, {
+          '🔍 *Пошук товару*\n\nВведіть назву товару для пошуку:', 
+          { 
+            parse_mode: 'Markdown',
+            reply_markup: {
+              keyboard: [['🏠 Головне меню']],
+              resize_keyboard: true
+            }
+          }
+        );
+      }
+      break;
+      
+    case '📦 Відстежити замовлення':
+      bot.sendMessage(chatId, 
+        '📦 *Відстеження замовлення*\n\nВведіть номер вашого замовлення:', 
+        { 
           parse_mode: 'Markdown',
           reply_markup: {
-            force_reply: true,
-            selective: true,
-            input_field_placeholder: '+380XXXXXXXXX'
+            keyboard: [['🏠 Головне меню']],
+            resize_keyboard: true
           }
-        }).then(phoneSent => {
-          // Видаляємо перший слухач
-          bot.removeReplyListener(replyListenerId);
-          
-          // Створюємо обробник для номера телефону
-          const phoneListenerId = bot.onReplyToMessage(chatId, phoneSent.message_id, async (phoneMsg) => {
-            const phone = phoneMsg.text;
-            
-            // Просимо ввести адресу
-            bot.sendMessage(chatId, 
-              `Чудово! Вкажіть адресу доставки:`, {
-              reply_markup: {
-                force_reply: true,
-                selective: true,
-                input_field_placeholder: 'місто, вулиця, будинок, квартира'
-              }
-            }).then(addressSent => {
-              // Видаляємо другий слухач
-              bot.removeReplyListener(phoneListenerId);
-              
-              // Створюємо обробник для адреси
-              const addressListenerId = bot.onReplyToMessage(chatId, addressSent.message_id, async (addressMsg) => {
-                const address = addressMsg.text;
-                
-                // Тут створюємо замовлення через API Prom.ua
-                const orderData = {
-                  name,
-                  phone,
-                  address,
-                  productId: product.id
-                };
-                
-                // Відправляємо повідомлення про обробку
-                bot.sendMessage(chatId, '⏳ Оформлюємо ваше замовлення...');
-                
-                // Створюємо замовлення через API
-                const orderResult = await createOrder(orderData);
-                
-                // Зберігаємо для адміна
-                adminOrders.push({
-                  id: orderResult?.id || `temp_${Date.now()}`,
-                  product: product.name,
-                  name,
-                  phone,
-                  address,
-                  date: new Date().toISOString()
-                });
-                
-                // Повідомляємо адміна
-                const adminText = `🆕 *Нове замовлення!*\n\n📦 Товар: *${product.name}*\n💰 Ціна: ${product.price} грн\n👤 Клієнт: ${name}\n📞 Телефон: ${phone}\n🏠 Адреса: ${address}`;
-                
-                bot.sendMessage(process.env.ADMIN_CHAT_ID, adminText, {
-                  parse_mode: 'Markdown'
-                });
-                
-                // Повідомляємо клієнта
-                bot.sendMessage(chatId, 
-                  `✅ *Замовлення успішно оформлено!*\n\n📦 Товар: *${product.name}*\n💰 Ціна: ${product.price} грн\n👤 Імʼя: ${name}\n📞 Телефон: ${phone}\n🏠 Адреса: ${address}\n\nМи зв'яжемося з вами найближчим часом для підтвердження замовлення. Дякуємо за покупку! 🙏`, {
-                  parse_mode: 'Markdown',
-                  reply_markup: {
-                    inline_keyboard: [
-                      [{ text: '📋 Повернутися до каталогу', callback_data: 'catalog' }]
-                    ]
-                  }
-                });
-                
-                // Видаляємо третій слухач
-                bot.removeReplyListener(addressListenerId);
-              });
-            });
-          });
-        });
-      });
-    });
-    return;
-  }
-  
-  // Обробка перегляду деталей товару
-  if (data.startsWith('view_')) {
-    const productId = data.split('_')[1];
-    await showProductDetails(chatId, productId);
-    return;
-  }
-  
-  // Обробка пагінації каталогу
-  if (data.startsWith('page_')) {
-    const page = parseInt(data.split('_')[1]);
-    await showCatalog(chatId, page);
-    return;
+        }
+      );
+      userStates[chatId] = 'track_order';
+      break;
+      
+    case '☎️ Підтримка':
+      bot.sendMessage(chatId, 
+        '*📞 Наша підтримка:*\n\n• Телеграм: @josnik_lamer\n• Email: support@example.com\n• Телефон: +380669419224\n\nМи відповімо вам у найкоротший термін!', 
+        Object.assign({ parse_mode: 'Markdown' }, mainMenu)
+      );
+      userStates[chatId] = 'main_menu';
+      break;
+      
+    case '📖 Допомога':
+      bot.sendMessage(chatId, 
+        '📖 *Довідка з використання бота:*\n\n• Натисніть кнопку "Каталог" для перегляду товарів\n• Оберіть "Список товарів" для перегляду всіх товарів\n• Використовуйте "Пошук товару" для знаходження конкретного товару\n• При оформленні замовлення вас попросять вказати ім\'я, телефон та адресу доставки\n• Після оформлення замовлення з вами зв\'яжеться наш менеджер\n\nЯкщо у вас є питання, натисніть кнопку "Підтримка".', 
+        Object.assign({ parse_mode: 'Markdown' }, mainMenu)
+      );
+      userStates[chatId] = 'main_menu';
+      break;
+      
+    case '🏠 Головне меню':
+      userStates[chatId] = 'main_menu';
+      bot.sendMessage(chatId, 
+        '🏠 *Головне меню*\n\nОберіть дію:', 
+        Object.assign({ parse_mode: 'Markdown' }, mainMenu)
+      );
+      break;
+      
+    case '◀️ Назад':
+      if (currentState === 'view_products') {
+        userStates[chatId] = 'catalog';
+        bot.sendMessage(chatId, 
+          '📂 *Каталог товарів*\n\nОберіть дію:', 
+          Object.assign({ parse_mode: 'Markdown' }, catalogMenu)
+        );
+      }
+      break;
+      
+    default:
+      await handleUserInput(chatId, text, currentState);
+      break;
   }
 });
 
-// Функція відображення сторінки каталогу
-async function showCatalog(chatId, page = 1) {
-  const itemsPerPage = 5;
-  const offset = (page - 1) * itemsPerPage;
-  
-  // Показати повідомлення про завантаження
+// Функція обробки введення користувача
+async function handleUserInput(chatId, text, currentState) {
+  switch (currentState) {
+    case 'search_product':
+      await searchProducts(chatId, text);
+      break;
+      
+    case 'track_order':
+      await trackOrder(chatId, text);
+      break;
+      
+    case 'order_name':
+      userOrders[chatId].name = text;
+      userStates[chatId] = 'order_phone';
+      bot.sendMessage(chatId, 
+        `Дякуємо, *${text}*!\n\nТепер вкажіть ваш номер телефону:`, 
+        { 
+          parse_mode: 'Markdown',
+          reply_markup: {
+            keyboard: [['🏠 Головне меню']],
+            resize_keyboard: true
+          }
+        }
+      );
+      break;
+      
+    case 'order_phone':
+      userOrders[chatId].phone = text;
+      userStates[chatId] = 'order_address';
+      bot.sendMessage(chatId, 
+        'Чудово! Вкажіть адресу доставки:', 
+        { 
+          reply_markup: {
+            keyboard: [['🏠 Головне меню']],
+            resize_keyboard: true
+          }
+        }
+      );
+      break;
+      
+    case 'order_address':
+      userOrders[chatId].address = text;
+      await processOrder(chatId);
+      break;
+      
+    default:
+      // Перевіряємо, чи це номер товару для покупки
+      if (text.match(/^\d+$/)) {
+        await handleProductSelection(chatId, text, currentState);
+      } else {
+        bot.sendMessage(chatId, 
+          '❓ Не розумію вашу команду. Скористайтеся кнопками меню.', 
+          Object.assign({}, getMenuForState(currentState))
+        );
+      }
+      break;
+  }
+}
+
+// Функція для отримання меню залежно від стану
+function getMenuForState(state) {
+  switch (state) {
+    case 'catalog':
+      return catalogMenu;
+    case 'view_products':
+      return {
+        reply_markup: {
+          keyboard: [['◀️ Назад', '🏠 Головне меню']],
+          resize_keyboard: true
+        }
+      };
+    default:
+      return mainMenu;
+  }
+}
+
+// Функція відображення списку товарів
+async function showProductsList(chatId) {
   const loadingMsg = await bot.sendMessage(chatId, '⏳ *Завантажую каталог товарів...*', {
     parse_mode: 'Markdown'
   });
   
   try {
-    // Отримуємо продукти з API Prom.ua
-    const products = await getCatalogProducts(50); // Отримаємо більше для пагінації
+    const products = await getCatalogProducts(20);
     
     if (!products || products.length === 0) {
       await bot.editMessageText('😔 На жаль, товари не знайдено. Спробуйте пізніше.', {
         chat_id: chatId,
-        message_id: loadingMsg.message_id,
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '« Назад', callback_data: 'start' }]
-          ]
-        }
+        message_id: loadingMsg.message_id
       });
       return;
     }
     
-    // Розбиваємо на сторінки
-    const totalPages = Math.ceil(products.length / itemsPerPage);
-    const pageProducts = products.slice(offset, offset + itemsPerPage);
-    
-    // Видаляємо повідомлення про завантаження
     await bot.deleteMessage(chatId, loadingMsg.message_id);
     
-    // Відправляємо кожен товар окремим повідомленням
-    for (const product of pageProducts) {
+    let productList = '*📄 Список товарів:*\n\n';
+    
+    products.forEach((product, index) => {
       const price = product.price ? `${product.price} грн` : 'Ціна за запитом';
-      const image = product.main_image?.url_original;
-      const availability = product.presence === 'available' ? '✅ В наявності' : '⌛ Під замовлення';
-      
-      const caption = `*${product.name}*\n\n💰 *${price}*\n${availability}\n\n${product.description ? product.description.substring(0, 100) + '...' : 'Натисніть кнопку деталі для більше інформації'}`;
-      
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { text: '🔍 Деталі', callback_data: `view_${product.id}` },
-            { text: '🛒 Купити', callback_data: `buy_${product.id}` }
-          ]
-        ]
-      };
-      
-      if (image) {
-        await bot.sendPhoto(chatId, image, {
-          caption,
-          parse_mode: 'Markdown',
-          reply_markup: keyboard
-        });
-      } else {
-        await bot.sendMessage(chatId, caption, {
-          parse_mode: 'Markdown',
-          reply_markup: keyboard
-        });
+      const availability = product.presence === 'available' ? '✅' : '⌛';
+      productList += `${index + 1}. *${product.name}*\n   💰 ${price} ${availability}\n\n`;
+    });
+    
+    productList += `\n📝 *Як замовити:*\nВведіть номер товару (1-${products.length}) для оформлення замовлення`;
+    
+    bot.sendMessage(chatId, productList, {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        keyboard: [['◀️ Назад', '🏠 Головне меню']],
+        resize_keyboard: true
       }
-    }
+    });
     
-    // Відправляємо навігаційні кнопки
-    const navButtons = [];
-    
-    // Кнопка "Назад"
-    if (page > 1) {
-      navButtons.push({ text: '« Попередня', callback_data: `page_${page - 1}` });
-    }
-    
-    // Номер сторінки
-    navButtons.push({ text: `${page} / ${totalPages}`, callback_data: 'catalog_info' });
-    
-    // Кнопка "Вперед"
-    if (page < totalPages) {
-      navButtons.push({ text: 'Наступна »', callback_data: `page_${page + 1}` });
-    }
-    
-    // Повернення до головного меню
-    const menuButtons = [[{ text: '« Назад до меню', callback_data: 'start' }]];
-    
-    // Якщо є кнопки навігації, додаємо їх
-    if (navButtons.length > 0) {
-      await bot.sendMessage(chatId, '📋 *Сторінка каталогу:*', {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [navButtons, ...menuButtons]
-        }
-      });
-    } else {
-      await bot.sendMessage(chatId, '📋 *Каталог товарів:*', {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: menuButtons
-        }
-      });
-    }
+    userStates[chatId] = 'view_products';
+    userOrders[chatId] = { products: products };
     
   } catch (error) {
     console.error('Помилка при відображенні каталогу:', error.message);
     bot.editMessageText('❌ Сталася помилка при завантаженні каталогу. Спробуйте пізніше.', {
       chat_id: chatId,
-      message_id: loadingMsg.message_id,
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '« Назад', callback_data: 'start' }]
-        ]
-      }
+      message_id: loadingMsg.message_id
     });
   }
 }
 
-// Функція відображення деталей товару
-async function showProductDetails(chatId, productId) {
-  // Показати повідомлення про завантаження
-  const loadingMsg = await bot.sendMessage(chatId, '⏳ *Завантажую інформацію про товар...*', {
+// Функція пошуку товарів
+async function searchProducts(chatId, query) {
+  const loadingMsg = await bot.sendMessage(chatId, '🔍 *Шукаю товари...*', {
     parse_mode: 'Markdown'
   });
   
   try {
-    // Отримуємо інформацію про товар
-    const product = await getProductInfo(productId);
+    const products = await getCatalogProducts(50);
+    const filteredProducts = products.filter(product => 
+      product.name.toLowerCase().includes(query.toLowerCase())
+    );
     
-    if (!product) {
-      await bot.editMessageText('❌ На жаль, товар не знайдено або недоступний.', {
-        chat_id: chatId,
-        message_id: loadingMsg.message_id,
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '« Назад до каталогу', callback_data: 'catalog' }]
-          ]
+    await bot.deleteMessage(chatId, loadingMsg.message_id);
+    
+    if (filteredProducts.length === 0) {
+      bot.sendMessage(chatId, 
+        `😔 За запитом "*${query}*" товари не знайдено.\n\nСпробуйте інший запит або переглянте весь каталог.`, 
+        { 
+          parse_mode: 'Markdown',
+          reply_markup: {
+            keyboard: [['📄 Список товарів', '🏠 Головне меню']],
+            resize_keyboard: true
+          }
         }
-      });
+      );
+      userStates[chatId] = 'catalog';
       return;
     }
     
-    // Видаляємо повідомлення про завантаження
-    await bot.deleteMessage(chatId, loadingMsg.message_id);
+    let searchResults = `🔍 *Результати пошуку "${query}":*\n\n`;
     
-    const price = product.price ? `${product.price} грн` : 'Ціна за запитом';
-    const availability = product.presence === 'available' ? '✅ В наявності' : '⌛ Під замовлення';
+    filteredProducts.slice(0, 10).forEach((product, index) => {
+      const price = product.price ? `${product.price} грн` : 'Ціна за запитом';
+      const availability = product.presence === 'available' ? '✅' : '⌛';
+      searchResults += `${index + 1}. *${product.name}*\n   💰 ${price} ${availability}\n\n`;
+    });
     
-    // Отримуємо до 5 фото товару
-    const images = product.images || [];
-    
-    if (images.length > 0) {
-      // Якщо є фото, відправляємо їх групою (максимум 10)
-      const mediaGroup = images.slice(0, 10).map((img, index) => ({
-        type: 'photo',
-        media: img.url_original,
-        caption: index === 0 ? `*${product.name}*\n\n${product.description || ''}` : '',
-        parse_mode: 'Markdown'
-      }));
-      
-      // Відправляємо групу фото
-      await bot.sendMediaGroup(chatId, mediaGroup);
-      
-      // Відправляємо інформацію та кнопки окремо
-      await bot.sendMessage(chatId, 
-        `*${product.name}*\n\n💰 *${price}*\n${availability}\n\n${product.vendor_code ? `Артикул: ${product.vendor_code}\n` : ''}${product.discount ? `🔥 Знижка: ${product.discount}%\n` : ''}${product.brand ? `Бренд: ${product.brand}\n` : ''}`, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '🛒 Купити', callback_data: `buy_${product.id}` }],
-            [{ text: '« Назад до каталогу', callback_data: 'catalog' }]
-          ]
-        }
-      });
-    } else {
-      // Якщо немає фото, відправляємо текст
-      await bot.sendMessage(chatId, 
-        `*${product.name}*\n\n💰 *${price}*\n${availability}\n\n${product.description || ''}\n\n${product.vendor_code ? `Артикул: ${product.vendor_code}\n` : ''}${product.discount ? `🔥 Знижка: ${product.discount}%\n` : ''}${product.brand ? `Бренд: ${product.brand}\n` : ''}`, {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '🛒 Купити', callback_data: `buy_${product.id}` }],
-            [{ text: '« Назад до каталогу', callback_data: 'catalog' }]
-          ]
-        }
-      });
+    if (filteredProducts.length > 10) {
+      searchResults += `\n... та ще ${filteredProducts.length - 10} товарів\n`;
     }
     
-  } catch (error) {
-    console.error('Помилка при відображенні деталей товару:', error.message);
-    bot.editMessageText('❌ Сталася помилка при завантаженні інформації про товар. Спробуйте пізніше.', {
-      chat_id: chatId,
-      message_id: loadingMsg.message_id,
+    searchResults += `\n📝 *Як замовити:*\nВведіть номер товару (1-${Math.min(filteredProducts.length, 10)}) для оформлення замовлення`;
+    
+    bot.sendMessage(chatId, searchResults, {
+      parse_mode: 'Markdown',
       reply_markup: {
-        inline_keyboard: [
-          [{ text: '« Назад до каталогу', callback_data: 'catalog' }]
-        ]
+        keyboard: [['🔍 Новий пошук', '📄 Список товарів', '🏠 Головне меню']],
+        resize_keyboard: true
       }
     });
+    
+    userStates[chatId] = 'view_products';
+    userOrders[chatId] = { products: filteredProducts.slice(0, 10) };
+    
+  } catch (error) {
+    console.error('Помилка пошуку:', error.message);
+    bot.editMessageText('❌ Сталася помилка при пошуку. Спробуйте пізніше.', {
+      chat_id: chatId,
+      message_id: loadingMsg.message_id
+    });
   }
+}
+
+// Функція обробки вибору товару
+async function handleProductSelection(chatId, productNumber, currentState) {
+  if (currentState !== 'view_products' || !userOrders[chatId] || !userOrders[chatId].products) {
+    bot.sendMessage(chatId, 
+      '❌ Спочатку перегляньте каталог товарів.', 
+      Object.assign({}, mainMenu)
+    );
+    return;
+  }
+  
+  const index = parseInt(productNumber) - 1;
+  const products = userOrders[chatId].products;
+  
+  if (index < 0 || index >= products.length) {
+    bot.sendMessage(chatId, 
+      `❌ Неправильний номер товару. Введіть число від 1 до ${products.length}.`
+    );
+    return;
+  }
+  
+  const product = products[index];
+  const price = product.price ? `${product.price} грн` : 'Ціна за запитом';
+  const availability = product.presence === 'available' ? '✅ В наявності' : '⌛ Під замовлення';
+  
+  // Показуємо детальну інформацію про товар
+  let productInfo = `🛒 *Товар для замовлення:*\n\n*${product.name}*\n\n💰 *${price}*\n${availability}\n\n`;
+  
+  if (product.description) {
+    productInfo += `📝 ${product.description.substring(0, 200)}${product.description.length > 200 ? '...' : ''}\n\n`;
+  }
+  
+  if (product.vendor_code) {
+    productInfo += `🏷 Артикул: ${product.vendor_code}\n`;
+  }
+  
+  if (product.brand) {
+    productInfo += `🏢 Бренд: ${product.brand}\n`;
+  }
+  
+  productInfo += '\n*Підтверджуєте замовлення?*';
+  
+  bot.sendMessage(chatId, productInfo, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      keyboard: [
+        ['✅ Підтверджую замовлення'],
+        ['◀️ Назад', '🏠 Головне меню']
+      ],
+      resize_keyboard: true
+    }
+  });
+  
+  userOrders[chatId].selectedProduct = product;
+  userStates[chatId] = 'confirm_order';
+}
+
+// Обробка підтвердження замовлення
+bot.on('message', async (msg) => {
+  const chatId = msg.chat.id;
+  const text = msg.text;
+  
+  if (text === '✅ Підтверджую замовлення' && userStates[chatId] === 'confirm_order') {
+    userStates[chatId] = 'order_name';
+    bot.sendMessage(chatId, 
+      '🛒 *Оформлення замовлення*\n\nДля продовження, вкажіть ваше ім\'я:', 
+      { 
+        parse_mode: 'Markdown',
+        reply_markup: {
+          keyboard: [['🏠 Головне меню']],
+          resize_keyboard: true
+        }
+      }
+    );
+  } else if (text === '🔍 Новий пошук') {
+    userStates[chatId] = 'search_product';
+    bot.sendMessage(chatId, 
+      '🔍 *Пошук товару*\n\nВведіть назву товару для пошуку:', 
+      { 
+        parse_mode: 'Markdown',
+        reply_markup: {
+          keyboard: [['🏠 Головне меню']],
+          resize_keyboard: true
+        }
+      }
+    );
+  }
+});
+
+// Функція обробки замовлення
+async function processOrder(chatId) {
+  const orderData = userOrders[chatId];
+  
+  if (!orderData || !orderData.selectedProduct) {
+    bot.sendMessage(chatId, '❌ Помилка оформлення замовлення.', Object.assign({}, mainMenu));
+    return;
+  }
+  
+  const product = orderData.selectedProduct;
+  
+  // Відправляємо повідомлення про обробку
+  bot.sendMessage(chatId, '⏳ Оформлюємо ваше замовлення...');
+  
+  // Створюємо замовлення через API
+  const orderResult = await createOrder({
+    name: orderData.name,
+    phone: orderData.phone,
+    address: orderData.address,
+    productId: product.id
+  });
+  
+  // Зберігаємо для адміна
+  const newOrder = {
+    id: orderResult?.id || `temp_${Date.now()}`,
+    product: product.name,
+    name: orderData.name,
+    phone: orderData.phone,
+    address: orderData.address,
+    date: new Date().toISOString()
+  };
+  
+  adminOrders.push(newOrder);
+  
+  // Повідомляємо адміна
+  const adminText = `🆕 *Нове замовлення!*\n\n📦 Товар: *${product.name}*\n💰 Ціна: ${product.price || 'за запитом'} грн\n👤 Клієнт: ${orderData.name}\n📞 Телефон: ${orderData.phone}\n🏠 Адреса: ${orderData.address}`;
+  
+  if (process.env.ADMIN_CHAT_ID) {
+    bot.sendMessage(process.env.ADMIN_CHAT_ID, adminText, {
+      parse_mode: 'Markdown'
+    });
+  }
+  
+  // Повідомляємо клієнта
+  bot.sendMessage(chatId, 
+    `✅ *Замовлення успішно оформлено!*\n\n📦 Товар: *${product.name}*\n💰 Ціна: ${product.price || 'за запитом'} грн\n👤 Ім'я: ${orderData.name}\n📞 Телефон: ${orderData.phone}\n🏠 Адреса: ${orderData.address}\n\nМи зв'яжемося з вами найближчим часом для підтвердження замовлення. Дякуємо за покупку! 🙏`, 
+    Object.assign({ parse_mode: 'Markdown' }, mainMenu)
+  );
+  
+  // Очищаємо стан користувача
+  userStates[chatId] = 'main_menu';
+  delete userOrders[chatId];
+}
+
+// Функція відстеження замовлення
+async function trackOrder(chatId, orderNumber) {
+  // Тут можна реалізувати логіку відстеження через API Prom.ua
+  bot.sendMessage(chatId, 
+    `📦 *Відстеження замовлення №${orderNumber}*\n\nЗамовлення обробляється нашими менеджерами.\nЗ вами зв'яжуться найближчим часом для підтвердження деталей доставки.\n\nДля додаткової інформації зверніться до підтримки.`, 
+    Object.assign({ parse_mode: 'Markdown' }, mainMenu)
+  );
+  
+  userStates[chatId] = 'main_menu';
 }
 
 // Обробка команди для отримання допомоги
@@ -472,15 +557,9 @@ bot.onText(/\/help/, (msg) => {
   const chatId = msg.chat.id;
   
   bot.sendMessage(chatId, 
-    '📖 *Довідка з використання бота:*\n\n• Натисніть кнопку "Переглянути каталог" для перегляду товарів.\n• Для кожного товару доступні кнопки "Деталі" та "Купити".\n• При оформленні замовлення вас попросять вказати ім\'я, телефон та адресу доставки.\n• Після оформлення замовлення з вами зв\'яжеться наш менеджер для підтвердження.\n\nЯкщо у вас є питання, натисніть кнопку "Зв\'язатися з підтримкою".', {
-    parse_mode: 'Markdown',
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '🛍️ Переглянути каталог', callback_data: 'catalog' }],
-        [{ text: '📞 Зв\'язатися з підтримкою', callback_data: 'support' }]
-      ]
-    }
-  });
+    '📖 *Довідка з використання бота:*\n\n• Натисніть кнопку "Каталог" для перегляду товарів\n• Оберіть "Список товарів" для перегляду всіх товарів\n• Використовуйте "Пошук товару" для знаходження конкретного товару\n• При оформленні замовлення вас попросять вказати ім\'я, телефон та адресу доставки\n• Після оформлення замовлення з вами зв\'яжеться наш менеджер\n\nЯкщо у вас є питання, натисніть кнопку "Підтримка".', 
+    Object.assign({ parse_mode: 'Markdown' }, mainMenu)
+  );
 });
 
 console.log('Бот запущено!');
